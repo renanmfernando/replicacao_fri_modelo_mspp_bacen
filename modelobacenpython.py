@@ -53,7 +53,7 @@ class ModelParameters:
     meta_ss: float = 3.0
     infl_ss_ext: float = 2.0
 
-class BacenDSGEModel:
+class BacenMSPPModel:
     def __init__(self, params: ModelParameters = None):
         self.params = params if params else ModelParameters()
         
@@ -131,8 +131,8 @@ class BacenDSGEModel:
         self.setup_state_space()
     
     def setup_state_space(self):
-        """Setup state space representation for the linear DSGE model"""
-        # For a linear DSGE model: E[y(t+1)] = A * y(t) + B * x(t)
+        """Setup state space representation for the linear MSPP model"""
+        # For a linear MSPP model: E[y(t+1)] = A * y(t) + B * x(t)
         # We need to solve this properly considering leads and lags
         
         # This is a simplified approach - in practice, we'd need to solve
@@ -480,8 +480,8 @@ class BacenDSGEModel:
 
 # Example usage
 if __name__ == "__main__":
-    print("Initializing Bacen DSGE Model (Corrected Version)...")
-    model = BacenDSGEModel()
+    print("Initializing Bacen MSPP Model")
+    model = BacenMSPPModel()
     
     print("Computing Impulse Response Functions...")
     irfs = model.compute_irfs(periods=16, shock_size=1.0)
@@ -495,4 +495,5 @@ if __name__ == "__main__":
         sample_vars = ['hiato_prod', 'infl_cheia_12m', 'selic', 'var_cambio']
         print(irfs['e_uip'][sample_vars].head(8))
     
+
     print("\nModel IRFs completed!")
