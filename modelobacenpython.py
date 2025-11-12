@@ -10,7 +10,6 @@ warnings.filterwarnings('ignore')
 
 @dataclass
 class ModelParameters:
-    """Class to store all model parameters"""
     # IS Curve parameters
     beta_1: float = 0.85
     beta_2: float = 0.44
@@ -467,4 +466,5 @@ if __name__ == "__main__":
     
 
     print("Modelo IRFs completo")
+
 
