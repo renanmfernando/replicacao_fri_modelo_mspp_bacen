@@ -56,8 +56,7 @@ class ModelParameters:
 class BacenMSPPModel:
     def __init__(self, params: ModelParameters = None):
         self.params = params if params else ModelParameters()
-        
-        # Define variable names (maintaining exact order from .mod file)
+
         self.endogenous_vars = [
             'hiato_prod',           # 0
             'juros_real_gap',       # 1
@@ -126,24 +125,14 @@ class BacenMSPPModel:
         
         self.n_endo = len(self.endogenous_vars)
         self.n_exo = len(self.exogenous_vars)
-        
-        # Create state space representation
+
         self.setup_state_space()
     
     def setup_state_space(self):
-        """Setup state space representation for the linear MSPP model"""
-        # For a linear MSPP model: E[y(t+1)] = A * y(t) + B * x(t)
-        # We need to solve this properly considering leads and lags
-        
-        # This is a simplified approach - in practice, we'd need to solve
-        # the full rational expectations system using methods like Blanchard-Kahn
-        self.n_states = self.n_endo + 4  # Add lags for selic(-2), and other multi-lag variables
-        
-        # We'll store the last few periods for proper lag handling
+        self.n_states = self.n_endo + 4 
         self.max_lags = 4
         
     def get_var_value(self, y_full, var_name, lag=0):
-        """Get variable value with proper lag handling"""
         var_idx = self.endogenous_vars.index(var_name)
         period_idx = self.max_lags + lag
         if period_idx < 0 or period_idx >= y_full.shape[0]:
@@ -151,16 +140,8 @@ class BacenMSPPModel:
         return y_full[period_idx, var_idx]
     
     def model_equations_full(self, y_full, x_t, period_t):
-        """
-        Complete model equations with proper forward/backward looking terms
-        y_full: array with multiple time periods [t-max_lags, ..., t, ..., t+max_lags]
-        x_t: exogenous variables at time t
-        period_t: index of current period in y_full
-        """
         p = self.params
         equations = np.zeros(self.n_endo)
-        
-        # Current period values
         t_idx = period_t
         y_t = y_full[t_idx]
         y_tm1 = y_full[t_idx-1] if t_idx > 0 else np.zeros(self.n_endo)
@@ -171,7 +152,6 @@ class BacenMSPPModel:
         y_tp3 = y_full[t_idx+3] if t_idx < y_full.shape[0]-3 else np.zeros(self.n_endo)
         y_tp4 = y_full[t_idx+4] if t_idx < y_full.shape[0]-4 else np.zeros(self.n_endo)
         
-        # Helper function to get variable by name
         def get_var(y_arr, name):
             return y_arr[self.endogenous_vars.index(name)]
         def get_exo(name):
@@ -350,18 +330,16 @@ class BacenMSPPModel:
         return equations
     
     def solve_period(self, y_full, x_t, period_t):
-        """Solve for one period using nonlinear solver"""
         def residual_func(y_t_guess):
             y_full[period_t] = y_t_guess
             return self.model_equations_full(y_full, x_t, period_t)
         
-        # Initial guess (use previous period or zeros)
         if period_t > 0:
             initial_guess = y_full[period_t-1].copy()
         else:
             initial_guess = np.zeros(self.n_endo)
         
-        # Solve
+
         try:
             solution = fsolve(residual_func, initial_guess, xtol=1e-8)
             return solution
@@ -371,20 +349,17 @@ class BacenMSPPModel:
     def simulate(self, periods: int = 2100, burnin: int = 100) -> pd.DataFrame:
         """Simulate the model with proper forward-looking expectations"""
         total_periods = periods + burnin
-        buffer_periods = 8  # Extra periods for forward-looking terms
+        buffer_periods = 8  
         extended_periods = total_periods + buffer_periods
         
-        # Initialize arrays with buffer
         y_full = np.zeros((extended_periods, self.n_endo))
         x = np.zeros((extended_periods, self.n_exo))
-        
-        # Generate shocks
+  
         np.random.seed(42)
         for i, var_name in enumerate(self.exogenous_vars):
             if var_name in self.shock_stds:
                 x[:total_periods, i] = np.random.normal(0, self.shock_stds[var_name], total_periods)
         
-        # Solve model period by period with iteration for forward-looking terms
         max_iterations = 5
         for iteration in range(max_iterations):
             y_old = y_full.copy()
@@ -393,25 +368,23 @@ class BacenMSPPModel:
                 try:
                     y_full[t] = self.solve_period(y_full, x[t], t)
                 except:
-                    # If solver fails, use simple update
                     if t > 0:
                         y_full[t] = 0.9 * y_full[t-1]
             
-            # Check convergence
+
             if np.max(np.abs(y_full - y_old)) < 1e-6:
                 break
         
-        # Remove burnin and buffer
+
         y_result = y_full[burnin:total_periods]
         
-        # Create DataFrame
+
         df = pd.DataFrame(y_result, columns=self.endogenous_vars)
         df.index.name = 'Period'
         
         return df
     
     def compute_irfs(self, periods: int = 16, shock_size: float = 1.0) -> Dict[str, pd.DataFrame]:
-        """Compute Impulse Response Functions"""
         irfs = {}
         buffer_periods = 8
         total_periods = periods + buffer_periods
@@ -419,20 +392,20 @@ class BacenMSPPModel:
         for shock_var in self.shock_stds.keys():
             print(f"Computing IRF for {shock_var}...")
             
-            # Baseline (no shock)
+ 
             y_baseline = np.zeros((total_periods, self.n_endo))
             x_baseline = np.zeros((total_periods, self.n_exo))
             
-            # Shock scenario
+
             y_shock = np.zeros((total_periods, self.n_endo))
             x_shock = np.zeros((total_periods, self.n_exo))
             shock_idx = self.exogenous_vars.index(shock_var)
             x_shock[0, shock_idx] = shock_size
             
-            # Solve both scenarios
+
             for scenario_name, (y_sim, x_sim) in [("baseline", (y_baseline, x_baseline)), 
                                                   ("shock", (y_shock, x_shock))]:
-                # Iterate for forward-looking expectations
+      
                 for iteration in range(3):
                     for t in range(periods):
                         try:
@@ -440,11 +413,9 @@ class BacenMSPPModel:
                         except:
                             if t > 0:
                                 y_sim[t] = 0.95 * y_sim[t-1]
-            
-            # Compute IRF as difference
+       
             irf_result = y_shock[:periods] - y_baseline[:periods]
-            
-            # Store IRF
+ 
             irf_df = pd.DataFrame(irf_result, columns=self.endogenous_vars)
             irf_df.index.name = 'Periods'
             irfs[shock_var] = irf_df
@@ -452,7 +423,7 @@ class BacenMSPPModel:
         return irfs
     
     def plot_irfs(self, irfs: Dict[str, pd.DataFrame], variables: List[str] = None):
-        """Plot Impulse Response Functions"""
+
         if variables is None:
             variables = ['hiato_prod', 'infl_cheia_12m', 'selic', 'var_cambio']
         
@@ -478,22 +449,22 @@ class BacenMSPPModel:
         plt.tight_layout()
         plt.show()
 
-# Example usage
+#usando de fato o modelo // Computando irfs
 if __name__ == "__main__":
-    print("Initializing Bacen MSPP Model")
+    print("inicialziando o modelo")
     model = BacenMSPPModel()
     
-    print("Computing Impulse Response Functions...")
+    print("Calculando IRF's...")
     irfs = model.compute_irfs(periods=16, shock_size=1.0)
     
     print("\nPlotting IRFs...")
     model.plot_irfs(irfs)
     
-    # Show some IRF values
     print("\nSample IRF Values (e_uip shock):")
     if 'e_uip' in irfs:
         sample_vars = ['hiato_prod', 'infl_cheia_12m', 'selic', 'var_cambio']
         print(irfs['e_uip'][sample_vars].head(8))
     
 
-    print("\nModel IRFs completed!")
+    print("Modelo IRFs completo")
+
